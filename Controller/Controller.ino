@@ -1,22 +1,28 @@
 #include <Bluepad32.h>
 
-// ==========================================
-// 1. DEFINICIÓN DE PINES (ESP32 -> TB6612FNG)
-// ==========================================
-const int STBY = 4;
 
-// Motor Derecho (A) -> Joystick Derecho
-const int PWMA = 16;
-const int AIN1 = 18;
-const int AIN2 = 19;
+// 1. DEFINICION DE PINES
 
-// Motor Izquierdo (B) -> Joystick Izquierdo
-const int PWMB = 17;
-const int BIN1 = 22;
-const int BIN2 = 23;
+const int STBY = 4;  // Habilita el puente H
 
+// Motor Derecho = Joystick Derecho
+const int PWMA = 16;  // Control de velocidad PWM
+const int AIN1 = 18;  // Direccion
+const int AIN2 = 19;  // Direccion
+
+// Motor Izquierdo = Joystick Izquierdo
+const int PWMB = 17;  // Control de velocidad PWM
+const int BIN1 = 22;  // Direccion
+const int BIN2 = 23;  // Direccion
+
+// Guarda los controles conectados
 ControllerPtr myControllers[BP32_MAX_GAMEPADS];
 
+
+// 2. CONEXION DEL MANDO
+
+
+// Guarda el mando cuando se conecta
 void onConnectedController(ControllerPtr ctl) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (myControllers[i] == nullptr) {
@@ -27,6 +33,7 @@ void onConnectedController(ControllerPtr ctl) {
     }
 }
 
+// Elimina el mando y detiene los motores al desconectarse
 void onDisconnectedController(ControllerPtr ctl) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (myControllers[i] == ctl) {
@@ -38,9 +45,14 @@ void onDisconnectedController(ControllerPtr ctl) {
     }
 }
 
+
+
+// 3. CONFIGURACION INICIAL
+
 void setup() {
     Serial.begin(115200);
-    
+
+    // Pines utilizados como salidas hacia el puente H
     pinMode(STBY, OUTPUT);
     pinMode(PWMA, OUTPUT);
     pinMode(AIN1, OUTPUT);
@@ -49,65 +61,113 @@ void setup() {
     pinMode(BIN1, OUTPUT);
     pinMode(BIN2, OUTPUT);
 
+    // Habilita el puente H e inicia con motores detenidos
     digitalWrite(STBY, HIGH);
     frenarTodo();
 
+    // Inicializa la comunicacion con el mando
     BP32.setup(&onConnectedController, &onDisconnectedController);
-    Serial.println("Esperando conexión del control de PS4...");
+
+    Serial.println("Esperando conexion del control de PS4...");
 }
 
+
+// 4. PROGRAMA PRINCIPAL
+
+
 void loop() {
+
+    // Actualiza los datos recibidos por Bluetooth
     BP32.update();
 
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         ControllerPtr miControl = myControllers[i];
 
         if (miControl && miControl->isConnected()) {
+
+            // Lectura vertical de ambos joysticks (-511 a 512)
+            int joyIzqY = miControl->axisY();
+            int joyDerY = miControl->axisRY();
+
+
+            // CONTROL MOTOR IZQUIERDO
             
-            // Los joysticks en Bluepad32 devuelven valores entre -511 y 512
-            // Hacia ARRIBA es negativo, hacia ABAJO es positivo.
-            int joyIzqY = miControl->axisY();   // Eje Y del Joystick Izquierdo
-            int joyDerY = miControl->axisRY();  // Eje Y del Joystick Derecho
 
-            // ====================================================
-            // 1. CONTROL MOTOR IZQUIERDO
-            // ====================================================
-            // Zona muerta (Deadzone): ignorar valores menores a 30
+            // Zona muerta para evitar movimientos involuntarios
             if (abs(joyIzqY) < 30) {
-                digitalWrite(BIN1, LOW); digitalWrite(BIN2, LOW); analogWrite(PWMB, 0);
-            } else {
-                // Convertir el valor del joystick (30 a 512) a velocidad PWM (0 a 255)
-                int pwmIzq = map(abs(joyIzqY), 30, 512, 0, 255);
-                pwmIzq = constrain(pwmIzq, 0, 255); // Seguridad extra
+                digitalWrite(BIN1, LOW);
+                digitalWrite(BIN2, LOW);
+                analogWrite(PWMB, 0);
 
-                if (joyIzqY < -30) { // Joystick hacia ARRIBA
-                    digitalWrite(BIN1, HIGH); digitalWrite(BIN2, LOW); analogWrite(PWMB, pwmIzq);
-                } else if (joyIzqY > 30) { // Joystick hacia ABAJO
-                    digitalWrite(BIN1, LOW); digitalWrite(BIN2, HIGH); analogWrite(PWMB, pwmIzq);
+            } else {
+
+                // Mapea el joystick al rango PWM de 0 a 255
+                int pwmIzq = map(abs(joyIzqY), 30, 512, 0, 255);
+                pwmIzq = constrain(pwmIzq, 0, 255);
+
+                // Joystick hacia arriba
+                if (joyIzqY < -30) {
+                    digitalWrite(BIN1, HIGH);
+                    digitalWrite(BIN2, LOW);
+                    analogWrite(PWMB, pwmIzq);
+
+                // Joystick hacia abajo
+                } else if (joyIzqY > 30) {
+                    digitalWrite(BIN1, LOW);
+                    digitalWrite(BIN2, HIGH);
+                    analogWrite(PWMB, pwmIzq);
                 }
             }
 
-            // ====================================================
-            // 2. CONTROL MOTOR DERECHO
-            // ====================================================
+
+            
+            // CONTROL MOTOR DERECHO
+      
+
+            // Zona muerta para evitar movimientos involuntarios
             if (abs(joyDerY) < 30) {
-                digitalWrite(AIN1, LOW); digitalWrite(AIN2, LOW); analogWrite(PWMA, 0);
+                digitalWrite(AIN1, LOW);
+                digitalWrite(AIN2, LOW);
+                analogWrite(PWMA, 0);
+
             } else {
+
+                // Mapea el joystick al rango PWM de 0 a 255
                 int pwmDer = map(abs(joyDerY), 30, 512, 0, 255);
                 pwmDer = constrain(pwmDer, 0, 255);
 
-                if (joyDerY < -30) { // Joystick hacia ARRIBA
-                    digitalWrite(AIN1, HIGH); digitalWrite(AIN2, LOW); analogWrite(PWMA, pwmDer);
-                } else if (joyDerY > 30) { // Joystick hacia ABAJO
-                    digitalWrite(AIN1, LOW); digitalWrite(AIN2, HIGH); analogWrite(PWMA, pwmDer);
+                // Joystick hacia arriba
+                if (joyDerY < -30) {
+                    digitalWrite(AIN1, HIGH);
+                    digitalWrite(AIN2, LOW);
+                    analogWrite(PWMA, pwmDer);
+
+                // Joystick hacia abajo
+                } else if (joyDerY > 30) {
+                    digitalWrite(AIN1, LOW);
+                    digitalWrite(AIN2, HIGH);
+                    analogWrite(PWMA, pwmDer);
                 }
             }
         }
     }
+
+    // Pequena espera entre cada lectura
     delay(15);
 }
 
+
+
+// 5. DETENER MOTORES
+
+
+// Coloca ambos motores en estado detenido
 void frenarTodo() {
-    digitalWrite(AIN1, LOW); digitalWrite(AIN2, LOW); analogWrite(PWMA, 0);
-    digitalWrite(BIN1, LOW); digitalWrite(BIN2, LOW); analogWrite(PWMB, 0);
+    digitalWrite(AIN1, LOW);
+    digitalWrite(AIN2, LOW);
+    analogWrite(PWMA, 0);
+
+    digitalWrite(BIN1, LOW);
+    digitalWrite(BIN2, LOW);
+    analogWrite(PWMB, 0);
 }
